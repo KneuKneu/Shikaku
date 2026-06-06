@@ -51,6 +51,7 @@
         .editor-tools { margin-top: 15px; background: #2a2a2a; padding: 15px; border-radius: 8px; text-align: left; }
         .tool-row { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
         .tool-select { padding: 8px; background: #3a3a3a; color: white; border: 1px solid #555; border-radius: 4px; font-size: 1rem; }
+        #editorCanvas { cursor: crosshair; }
         .dialog-overlay {
             position: fixed;
             inset: 0;
@@ -74,6 +75,7 @@
         }
         .dialog-card h2 { margin-top: 0; }
         .dialog-card p { margin: 0 0 12px; color: #ccc; }
+        .dialog-input-wrap { margin-bottom: 12px; }
         .dialog-input {
             width: 100%;
             box-sizing: border-box;
@@ -84,6 +86,7 @@
             color: white;
             font-size: 1rem;
         }
+        .dialog-hidden { display: none !important; }
     </style>
 </head>
 <body>
@@ -155,13 +158,15 @@
     </div>
 
     <div id="packDialog" class="dialog-overlay" aria-hidden="true">
-        <div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="packDialogTitle">
-            <h2 id="packDialogTitle">Nieuw Pack</h2>
-            <p>Geef je level pack een naam.</p>
-            <input id="packNameInput" class="dialog-input" type="text" maxlength="40" placeholder="Bijv. Mijn Pack">
+        <div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+            <h2 id="dialogTitle">Nieuw Pack</h2>
+            <p id="dialogMessage">Geef je level pack een naam.</p>
+            <div id="dialogInputWrap" class="dialog-input-wrap">
+                <input id="dialogInput" class="dialog-input" type="text" maxlength="40" placeholder="Bijv. Mijn Pack">
+            </div>
             <div class="btn-group" style="margin-top: 16px;">
-                <button type="button" class="game-btn btn-back" onclick="closePackDialog()">Annuleren</button>
-                <button type="button" class="game-btn btn-purple" onclick="confirmNewPack()">Maken</button>
+                <button id="dialogCancelBtn" type="button" class="game-btn btn-back">Annuleren</button>
+                <button id="dialogConfirmBtn" type="button" class="game-btn btn-purple">Maken</button>
             </div>
         </div>
     </div>
@@ -194,6 +199,7 @@ let dragStart = null;
 let dragEnd = null;
 let hasDragged = false;
 let userShapes = [];
+let editorHoverCell = null;
 const colors = ["#26a69a", "#ab47bc", "#ec407a", "#ffa726", "#26c6da", "#8d6e63"];
 
 let editorLevel = { width: 4, height: 4, grid: Array(4).fill(null).map(() => Array(4).fill("0")) };
@@ -483,22 +489,46 @@ function drawEditor() {
             }
         }
     }
+
+    if (editorHoverCell) {
+        const x = editorHoverCell.col * eCellSize;
+        const y = editorHoverCell.row * eCellSize;
+        eCtx.fillStyle = "rgba(0, 150, 255, 0.18)";
+        eCtx.fillRect(x, y, eCellSize, eCellSize);
+        eCtx.strokeStyle = "#0096ff";
+        eCtx.lineWidth = 2;
+        eCtx.strokeRect(x + 1, y + 1, eCellSize - 2, eCellSize - 2);
+    }
+}
+
+function getEditorGridPosition(clientX, clientY) {
+    const rect = editorCanvas.getBoundingClientRect();
+    const scaleX = editorCanvas.width / rect.width;
+    const scaleY = editorCanvas.height / rect.height;
+    const eCellWidth = editorCanvas.width / editorLevel.width;
+    const eCellHeight = editorCanvas.height / editorLevel.height;
+    const col = Math.floor(((clientX - rect.left) * scaleX) / eCellWidth);
+    const row = Math.floor(((clientY - rect.top) * scaleY) / eCellHeight);
+    if (row >= 0 && row < editorLevel.height && col >= 0 && col < editorLevel.width) return { row, col };
+    return null;
 }
 
 function handleEditorClick(clientX, clientY) {
     if (currentScreen !== "editor") return;
-    const rect = editorCanvas.getBoundingClientRect(); const eCellSize = editorCanvas.width / editorLevel.width;
-    const col = Math.floor((clientX - rect.left) / eCellSize); const row = Math.floor((clientY - rect.top) / eCellSize);
+    const pos = getEditorGridPosition(clientX, clientY);
+    if (!pos) return;
 
-    if (row >= 0 && row < editorLevel.height && col >= 0 && col < editorLevel.width) {
-        const selectedTool = document.getElementById('toolSelect').value;
-        if (selectedTool === "NUMBER") {
-            const num = prompt("Voer een getal in:"); if (num && !isNaN(num)) editorLevel.grid[row][col] = num.trim();
-        } else if (selectedTool === "FORMULA") {
-            const formula = prompt("Voer de formule in (bijv. 3x2):"); if (formula && formula.includes('x')) editorLevel.grid[row][col] = formula.toLowerCase().trim();
-        } else { editorLevel.grid[row][col] = selectedTool; }
-        drawEditor();
+    const selectedTool = document.getElementById('toolSelect').value;
+    if (selectedTool === "NUMBER") {
+        const num = prompt("Voer een getal in:");
+        if (num && !isNaN(num)) editorLevel.grid[pos.row][pos.col] = num.trim();
+    } else if (selectedTool === "FORMULA") {
+        const formula = prompt("Voer de formule in (bijv. 3x2):");
+        if (formula && formula.toLowerCase().includes('x')) editorLevel.grid[pos.row][pos.col] = formula.toLowerCase().trim();
+    } else {
+        editorLevel.grid[pos.row][pos.col] = selectedTool;
     }
+    drawEditor();
 }
 
 function testCustomLevel() { isTestingCustom = true; const lvl = JSON.parse(JSON.stringify(editorLevel)); lvl.id = "custom_test"; startLevel(lvl); }
@@ -557,8 +587,20 @@ canvas.addEventListener('mousedown', (e) => { touchStartLogic(e.clientX, e.clien
 window.addEventListener('mousemove', (e) => { touchMoveLogic(e.clientX, e.clientY); });
 window.addEventListener('mouseup', () => { touchEndLogic(); });
 
-editorCanvas.addEventListener('click', (e) => handleEditorClick(e.clientX, e.clientY));
-editorCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleEditorClick(e.touches[0].clientX, e.touches[0].clientY); });
+editorCanvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    handleEditorClick(e.clientX, e.clientY);
+});
+editorCanvas.addEventListener('pointermove', (e) => {
+    if (currentScreen !== "editor") return;
+    editorHoverCell = getEditorGridPosition(e.clientX, e.clientY);
+    drawEditor();
+});
+editorCanvas.addEventListener('pointerleave', () => {
+    editorHoverCell = null;
+    drawEditor();
+});
 
 packDialog.addEventListener('click', (event) => {
     if (event.target === packDialog) closePackDialog();
