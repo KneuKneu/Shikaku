@@ -51,6 +51,39 @@
         .editor-tools { margin-top: 15px; background: #2a2a2a; padding: 15px; border-radius: 8px; text-align: left; }
         .tool-row { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
         .tool-select { padding: 8px; background: #3a3a3a; color: white; border: 1px solid #555; border-radius: 4px; font-size: 1rem; }
+        .dialog-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.72);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 1000;
+        }
+        .dialog-overlay.open { display: flex; }
+        .dialog-card {
+            width: min(100%, 360px);
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+            text-align: left;
+        }
+        .dialog-card h2 { margin-top: 0; }
+        .dialog-card p { margin: 0 0 12px; color: #ccc; }
+        .dialog-input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #555;
+            background: #1f1f1f;
+            color: white;
+            font-size: 1rem;
+        }
     </style>
 </head>
 <body>
@@ -58,8 +91,8 @@
     <div id="menuScreen" class="screen active">
         <h1>Shikaku Puzzels</h1>
         <div class="btn-group" style="margin-bottom: 20px;">
-            <button class="game-btn btn-blue" style="flex: 1;" onclick="startEditor()">🛠️ Level Editor</button>
-            <button class="game-btn btn-purple" style="flex: 1;" onclick="createNewPack()">📁 Nieuw Pack</button>
+            <button type="button" class="game-btn btn-blue" style="flex: 1;" onclick="startEditor()">🛠️ Level Editor</button>
+            <button type="button" class="game-btn btn-purple" style="flex: 1;" onclick="createNewPack()">📁 Nieuw Pack</button>
         </div>
         <div id="packsList"></div>
     </div>
@@ -73,8 +106,8 @@
         </div>
 
         <div class="btn-group">
-            <button id="backBtn" class="game-btn btn-back" onclick="showMenu()">Menu</button>
-            <button class="game-btn btn-reset" onclick="resetLevel()">Reset</button>
+            <button type="button" id="backBtn" class="game-btn btn-back" onclick="showMenu()">Menu</button>
+            <button type="button" class="game-btn btn-reset" onclick="resetLevel()">Reset</button>
         </div>
     </div>
 
@@ -115,9 +148,21 @@
         </div>
 
         <div class="btn-group">
-            <button class="game-btn btn-back" onclick="showMenu()">Menu</button>
-            <button class="game-btn btn-green" onclick="testCustomLevel()">▶️ Testen</button>
-            <button class="game-btn btn-orange" onclick="saveCustomLevel()">💾 Level Opslaan</button>
+            <button type="button" class="game-btn btn-back" onclick="showMenu()">Menu</button>
+            <button type="button" class="game-btn btn-green" onclick="testCustomLevel()">▶️ Testen</button>
+            <button type="button" class="game-btn btn-orange" onclick="saveCustomLevel()">💾 Level Opslaan</button>
+        </div>
+    </div>
+
+    <div id="packDialog" class="dialog-overlay" aria-hidden="true">
+        <div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="packDialogTitle">
+            <h2 id="packDialogTitle">Nieuw Pack</h2>
+            <p>Geef je level pack een naam.</p>
+            <input id="packNameInput" class="dialog-input" type="text" maxlength="40" placeholder="Bijv. Mijn Pack">
+            <div class="btn-group" style="margin-top: 16px;">
+                <button type="button" class="game-btn btn-back" onclick="closePackDialog()">Annuleren</button>
+                <button type="button" class="game-btn btn-purple" onclick="confirmNewPack()">Maken</button>
+            </div>
         </div>
     </div>
 
@@ -132,7 +177,7 @@ const defaultPacks = [
                 id: "1-1", width: 4, height: 4,
                 grid: [
                     ["1", "3", "0", "0"],
-                    ["0", "0", "0", "0"],
+                    ["2", "0", "2", "0"],
                     ["4", "0", "4", "0"],
                     ["0", "0", "0", "0"]
                 ]
@@ -155,6 +200,8 @@ let editorLevel = { width: 4, height: 4, grid: Array(4).fill(null).map(() => Arr
 const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
 const editorCanvas = document.getElementById('editorCanvas'); const eCtx = editorCanvas.getContext('2d');
 const infoDiv = document.getElementById('info'); let cellSize = 50;
+const packDialog = document.getElementById('packDialog');
+const packNameInput = document.getElementById('packNameInput');
 
 function getCustomPacks() {
     const saved = localStorage.getItem('shikaku_custom_packs_v2');
@@ -166,11 +213,31 @@ function saveCustomPacks(packs) {
 }
 
 function createNewPack() {
-    const name = prompt("Voer de naam van het nieuwe Level Pack in:");
-    if (!name) return;
+    openPackDialog();
+}
+
+function openPackDialog() {
+    packNameInput.value = "";
+    packDialog.classList.add('open');
+    packDialog.setAttribute('aria-hidden', 'false');
+    setTimeout(() => packNameInput.focus(), 0);
+}
+
+function closePackDialog() {
+    packDialog.classList.remove('open');
+    packDialog.setAttribute('aria-hidden', 'true');
+}
+
+function confirmNewPack() {
+    const name = packNameInput.value.trim();
+    if (!name) {
+        packNameInput.focus();
+        return;
+    }
     const packs = getCustomPacks();
-    packs.push({ id: `pack_${Date.now()}`, name: name.trim(), levels: [] });
+    packs.push({ id: `pack_${Date.now()}`, name, levels: [] });
     saveCustomPacks(packs);
+    closePackDialog();
     initMenu();
 }
 
@@ -224,6 +291,7 @@ function showMenu() {
     currentScreen = "menu";
     document.querySelectorAll('.screen').forEach(s => s.className = 'screen');
     document.getElementById('menuScreen').className = 'screen active';
+    closePackDialog();
     initMenu();
 }
 
@@ -491,6 +559,14 @@ window.addEventListener('mouseup', () => { touchEndLogic(); });
 
 editorCanvas.addEventListener('click', (e) => handleEditorClick(e.clientX, e.clientY));
 editorCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleEditorClick(e.touches[0].clientX, e.touches[0].clientY); });
+
+packDialog.addEventListener('click', (event) => {
+    if (event.target === packDialog) closePackDialog();
+});
+packNameInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') confirmNewPack();
+    if (event.key === 'Escape') closePackDialog();
+});
 
 // Start de app direct in het menu
 showMenu();
