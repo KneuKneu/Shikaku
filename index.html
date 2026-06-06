@@ -207,7 +207,13 @@ const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getCont
 const editorCanvas = document.getElementById('editorCanvas'); const eCtx = editorCanvas.getContext('2d');
 const infoDiv = document.getElementById('info'); let cellSize = 50;
 const packDialog = document.getElementById('packDialog');
-const packNameInput = document.getElementById('packNameInput');
+const dialogTitle = document.getElementById('dialogTitle');
+const dialogMessage = document.getElementById('dialogMessage');
+const dialogInputWrap = document.getElementById('dialogInputWrap');
+const dialogInput = document.getElementById('dialogInput');
+const dialogCancelBtn = document.getElementById('dialogCancelBtn');
+const dialogConfirmBtn = document.getElementById('dialogConfirmBtn');
+let activeDialog = null;
 
 function getCustomPacks() {
     const saved = localStorage.getItem('shikaku_custom_packs_v2');
@@ -219,40 +225,94 @@ function saveCustomPacks(packs) {
 }
 
 function createNewPack() {
-    openPackDialog();
+    openTextDialog({
+        title: "Nieuw Pack",
+        message: "Geef je level pack een naam.",
+        placeholder: "Bijv. Mijn Pack",
+        confirmText: "Maken",
+        initialValue: "",
+        onConfirm: (value) => {
+            const packs = getCustomPacks();
+            packs.push({ id: `pack_${Date.now()}`, name: value, levels: [] });
+            saveCustomPacks(packs);
+            initMenu();
+        }
+    });
 }
 
-function openPackDialog() {
-    packNameInput.value = "";
+function openDialog(options) {
+    activeDialog = options;
+    dialogTitle.innerText = options.title || "Melding";
+    dialogMessage.innerText = options.message || "";
+    dialogInputWrap.classList.toggle('dialog-hidden', !options.showInput);
+    dialogInput.value = options.initialValue || "";
+    dialogInput.placeholder = options.placeholder || "";
+    dialogInput.maxLength = options.maxLength || 40;
+    dialogCancelBtn.innerText = options.cancelText || "Annuleren";
+    dialogConfirmBtn.innerText = options.confirmText || "OK";
+    dialogCancelBtn.classList.toggle('dialog-hidden', options.hideCancel === true);
     packDialog.classList.add('open');
     packDialog.setAttribute('aria-hidden', 'false');
-    setTimeout(() => packNameInput.focus(), 0);
+    setTimeout(() => {
+        if (options.showInput) dialogInput.focus();
+        else dialogConfirmBtn.focus();
+    }, 0);
+}
+
+function openTextDialog(options) {
+    openDialog({ ...options, showInput: true });
+}
+
+function openConfirmDialog(options) {
+    openDialog({ ...options, showInput: false, hideCancel: false });
+}
+
+function openAlertDialog(options) {
+    openDialog({ ...options, showInput: false, hideCancel: true, confirmText: options.confirmText || "OK" });
 }
 
 function closePackDialog() {
     packDialog.classList.remove('open');
     packDialog.setAttribute('aria-hidden', 'true');
+    activeDialog = null;
 }
 
-function confirmNewPack() {
-    const name = packNameInput.value.trim();
-    if (!name) {
-        packNameInput.focus();
+function handleDialogCancel() {
+    if (activeDialog && activeDialog.onCancel) {
+        activeDialog.onCancel();
+    }
+    closePackDialog();
+}
+
+function handleDialogConfirm() {
+    if (!activeDialog) return;
+    const value = activeDialog.showInput ? dialogInput.value.trim() : true;
+    if (activeDialog.showInput && !value) {
+        dialogInput.focus();
         return;
     }
-    const packs = getCustomPacks();
-    packs.push({ id: `pack_${Date.now()}`, name, levels: [] });
-    saveCustomPacks(packs);
+    const callback = activeDialog.onConfirm;
+    const result = callback ? callback(value) : true;
+    if (result === false) {
+        if (activeDialog.showInput) dialogInput.focus();
+        return;
+    }
     closePackDialog();
-    initMenu();
 }
 
 function deletePack(packId) {
-    if (!confirm("Weet je zeker dat je dit complete Pack inclusief alle levels wilt verwijderen?")) return;
-    let packs = getCustomPacks();
-    packs = packs.filter(p => p.id !== packId);
-    saveCustomPacks(packs);
-    initMenu();
+    openConfirmDialog({
+        title: "Pack verwijderen",
+        message: "Weet je zeker dat je dit complete Pack inclusief alle levels wilt verwijderen?",
+        confirmText: "Verwijderen",
+        cancelText: "Annuleren",
+        onConfirm: () => {
+            let packs = getCustomPacks();
+            packs = packs.filter(p => p.id !== packId);
+            saveCustomPacks(packs);
+            initMenu();
+        }
+    });
 }
 
 function initMenu() {
@@ -520,26 +580,67 @@ function handleEditorClick(clientX, clientY) {
 
     const selectedTool = document.getElementById('toolSelect').value;
     if (selectedTool === "NUMBER") {
-        const num = prompt("Voer een getal in:");
-        if (num && !isNaN(num)) editorLevel.grid[pos.row][pos.col] = num.trim();
+        openTextDialog({
+            title: "Gewoon getal",
+            message: "Voer een getal in voor dit vakje.",
+            placeholder: "Bijv. 4",
+            initialValue: editorLevel.grid[pos.row][pos.col] !== "0" ? editorLevel.grid[pos.row][pos.col] : "",
+            confirmText: "Opslaan",
+            onConfirm: (value) => {
+                if (!isNaN(value)) {
+                    editorLevel.grid[pos.row][pos.col] = value;
+                    drawEditor();
+                    return true;
+                }
+                dialogMessage.innerText = "Voer een geldig getal in.";
+                return false;
+            }
+        });
     } else if (selectedTool === "FORMULA") {
-        const formula = prompt("Voer de formule in (bijv. 3x2):");
-        if (formula && formula.toLowerCase().includes('x')) editorLevel.grid[pos.row][pos.col] = formula.toLowerCase().trim();
+        openTextDialog({
+            title: "Vorm-formule",
+            message: "Voer de formule in, bijvoorbeeld 3x2.",
+            placeholder: "Bijv. 3x2",
+            initialValue: editorLevel.grid[pos.row][pos.col] !== "0" ? editorLevel.grid[pos.row][pos.col] : "",
+            confirmText: "Opslaan",
+            onConfirm: (value) => {
+                if (value.toLowerCase().includes('x')) {
+                    editorLevel.grid[pos.row][pos.col] = value.toLowerCase();
+                    drawEditor();
+                    return true;
+                }
+                dialogMessage.innerText = "Gebruik bijvoorbeeld 3x2.";
+                return false;
+            }
+        });
     } else {
         editorLevel.grid[pos.row][pos.col] = selectedTool;
+        drawEditor();
     }
-    drawEditor();
 }
 
 function testCustomLevel() { isTestingCustom = true; const lvl = JSON.parse(JSON.stringify(editorLevel)); lvl.id = "custom_test"; startLevel(lvl); }
 
 function saveCustomLevel() {
     const packId = document.getElementById('targetPackSelect').value;
-    if (!packId || packId === "none") { alert("Maak eerst een Level Pack aan in het hoofdmenu!"); return; }
+    if (!packId || packId === "none") {
+        openAlertDialog({
+            title: "Geen pack gekozen",
+            message: "Maak eerst een Level Pack aan in het hoofdmenu!",
+            confirmText: "OK"
+        });
+        return;
+    }
     const packs = getCustomPacks(); const targetPack = packs.find(p => p.id === packId);
     if (targetPack) {
         const newLevel = JSON.parse(JSON.stringify(editorLevel)); newLevel.id = `custom_${Date.now()}`;
-        targetPack.levels.push(newLevel); saveCustomPacks(packs); alert(`Level succesvol opgeslagen!`); showMenu();
+        targetPack.levels.push(newLevel); saveCustomPacks(packs);
+        openAlertDialog({
+            title: "Opgeslagen",
+            message: "Level succesvol opgeslagen!",
+            confirmText: "OK",
+            onConfirm: () => showMenu()
+        });
     }
 }
 
@@ -602,12 +703,17 @@ editorCanvas.addEventListener('pointerleave', () => {
     drawEditor();
 });
 
+dialogCancelBtn.addEventListener('click', handleDialogCancel);
+dialogConfirmBtn.addEventListener('click', handleDialogConfirm);
+dialogInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') handleDialogConfirm();
+    if (event.key === 'Escape') handleDialogCancel();
+});
 packDialog.addEventListener('click', (event) => {
     if (event.target === packDialog) closePackDialog();
 });
-packNameInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') confirmNewPack();
-    if (event.key === 'Escape') closePackDialog();
+packDialog.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') handleDialogCancel();
 });
 
 // Start de app direct in het menu
